@@ -1,0 +1,28 @@
+# Python core
+numpy>=1.26
+scipy>=1.11
+
+# LLM stack
+torch>=2.2
+transformers>=4.44
+accelerate>=0.32
+sentence-transformers>=2.7
+
+# LlamaIndex (latest)
+llama-index>=0.12.5
+llama-index-llms-ollama>=0.5.0
+llama-index-embeddings-huggingface>=0.4.0
+
+# Ollama
+ollama>=0.4.4
+
+# RAG Evaluation (modern)
+ragas>=0.1.20
+datasets>=2.19
+
+# PDF
+pypdf>=5.0
+
+# Utilities
+tqdm>=4.66
+requests>=2.32
