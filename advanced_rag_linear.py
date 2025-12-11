@@ -1,14 +1,16 @@
 from llama_index.core.node_parser import HierarchicalNodeParser, get_leaf_nodes
 import logging
 from llama_index.core.postprocessor import SentenceTransformerRerank
-from llama_index.core import StorageContext, Document, VectorStoreIndex
+from llama_index.core import StorageContext, Document, VectorStoreIndex, PromptTemplate
 from datasets import Dataset
-from ragas import evaluate
+from ragas import evaluate, RunConfig
 from ragas.metrics import (
     faithfulness,
     answer_relevancy,
-    context_precision
+    context_precision,
+    answer_correctness
 )
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from ragas.llms import llm_factory
 from ragas.embeddings import embedding_factory
 from ragas.embeddings import embedding_factory
@@ -63,35 +65,54 @@ reranker = SentenceTransformerRerank(
     device="cpu"
 )
 
+# # Custom Prompt Template
+template = (
+    "We have provided context information below. \n"
+    "---------------------\n"
+    "{context_str}"
+    "\n---------------------\n"
+    "Given this information, please answer the question: {query_str}\n"
+    "Don't use your own knowledge, only use the information provided in the context."
+)
+qa_template = PromptTemplate(template)
+
 logger.info("Query Engine...")
 # Query Engine and reranking
 query_engine = index.as_query_engine(
     llm=llm,
     similarity_top_k=10,
-    node_postprocessors=[reranker]
+    node_postprocessors=[reranker],
+    text_qa_template=qa_template
 )
 
 with open('./files/eval_questions.json', 'r') as f:
     questions = json.load(f)
 
 records = []
-# Test question 1
-question = questions[0]['question']
-answer = questions[0]['answer']
+for q in questions:
+    question = q['question']
+    answer = q['answer']
 
-response = query_engine.query(question) 
-logger.info(f"Response: {response}")
+    response = query_engine.query(question) 
+    logger.info(f"Response: {response}")
 
-records.append({
-    "question": question,
-    "response": str(response),
-    "contexts": [n.text for n in response.source_nodes], # the context window is within source_nodes
-    "ground_truth": answer
-})
+    records.append({
+        "question": question,
+        "response": str(response),
+        "contexts": [n.text for n in response.source_nodes], # the context window is within source_nodes
+        "ground_truth": answer
+    })
 
-logger.info(f"Records: {records}")
+with open('./files/generated_answer/advanced_linear_1.json', 'w') as f:
+    json.dump(records, f)
 
 # Ragas evaluation 
+ragas_embed_model = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-small-en-v1.5",
+    model_kwargs={"device": "cpu"},
+    encode_kwargs={"normalize_embeddings": True}
+)
+
 client = OpenAI(
     base_url="http://localhost:11434/v1",
     api_key="ollama"
@@ -107,8 +128,10 @@ dataset = Dataset.from_list(records)
 logger.info("Ragas evaluation...")
 results = evaluate(
     dataset,
-    metrics=[faithfulness, answer_relevancy, context_precision],
+    metrics=[faithfulness, answer_relevancy, context_precision, answer_correctness],
     llm=rag_llm,
+    embeddings=ragas_embed_model,
+    run_config=RunConfig(timeout=600, max_workers=1)
 )
 
 logger.info(f"Ragas results: {results}")
