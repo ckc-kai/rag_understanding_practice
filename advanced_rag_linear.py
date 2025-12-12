@@ -36,7 +36,7 @@ documents = SimpleDirectoryReader(
 logger.info("Splitting documents into chunks for embedding...")
 # Split documents into chunks for embedding
 node_parser = HierarchicalNodeParser.from_defaults(
-    chunk_sizes=[2048, 512, 128]
+    chunk_sizes=[1024, 512]
 )
 
 nodes = node_parser.get_nodes_from_documents(documents)
@@ -61,7 +61,7 @@ logger.info("Reranking...")
 # Pick top 3 nodes
 reranker = SentenceTransformerRerank(
     model="BAAI/bge-reranker-base",
-    top_n=3,
+    top_n=7,
     device="cpu"
 )
 
@@ -103,7 +103,7 @@ for q in questions:
         "ground_truth": answer
     })
 
-with open('./files/generated_answer/advanced_linear_1.json', 'w') as f:
+with open('./files/generated_answer/advanced_linear_opt_1.json', 'w') as f:
     json.dump(records, f)
 
 # Ragas evaluation 
