@@ -1,11 +1,11 @@
 from llama_index.core.node_parser import HierarchicalNodeParser, get_leaf_nodes
 import logging
 from llama_index.core.postprocessor import SentenceTransformerRerank
-from llama_index.core import StorageContext, Document, VectorStoreIndex, PromptTemplate
+from llama_index.core import StorageContext, Document, VectorStoreIndex, PromptTemplate, get_response_synthesizer
 from llama_index.core.retrievers import QueryFusionRetriever
 from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.core.indices.query.query_transform import HyDEQueryTransform, StepDecomposeQueryTransform
-from llama_index.core.query_engine import TransformQueryEngine, RetrieverQueryEngine
+from llama_index.core.query_engine import TransformQueryEngine, RetrieverQueryEngine, MultiStepQueryEngine
 
 from datasets import Dataset
 from ragas import evaluate, RunConfig
@@ -25,6 +25,7 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core import SimpleDirectoryReader
 import json
 import Stemmer 
+import fitz
 
 from config import setup_logger
 
@@ -36,19 +37,25 @@ logger = logging.getLogger(__name__)
 llm = Ollama(model="deepseek-r1:7b", request_timeout=1200.0, context_window=8192)
 embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5", device="cpu")
 
-logger.info("Loading documents...")
-documents = SimpleDirectoryReader(
-    input_files = ["./files/BuildTrap.pdf"]
-).load_data()
+from files.utils import get_chapter_nodes
+
+# logger.info("Loading documents...")
+# documents = SimpleDirectoryReader(
+#     input_files = ["./files/BuildTrap.pdf"]
+# ).load_data()
 
 logger.info("Splitting documents into chunks for embedding...")
-# Split documents into chunks for embedding
-node_parser = HierarchicalNodeParser.from_defaults(
-    chunk_sizes=[1024, 512]
-)
 
-nodes = node_parser.get_nodes_from_documents(documents)
-leaf_nodes = get_leaf_nodes(nodes)  # only embed leaf nodes
+## Split documents into chunks for embedding
+# node_parser = HierarchicalNodeParser.from_defaults(
+#     chunk_sizes=[1024, 512]
+# )
+# nodes = node_parser.get_nodes_from_documents(documents)
+# leaf_nodes = get_leaf_nodes(nodes)  # only embed leaf nodes
+
+# Use Chapter Chunking
+nodes = get_chapter_nodes("./files/BuildTrap.pdf")
+leaf_nodes = nodes # For chapter based chunking, all nodes are leaf nodes (flat structure)
 
 # Link parents and children
 # Storage context stores not only documents(text) but also nodes(embeddings)
@@ -113,11 +120,13 @@ base_query_engine = RetrieverQueryEngine.from_args(
 
 # Wrap with HyDE
 # Note: TransformQueryEngine applies the transform (HyDE) to the query BEFORE passing it to base_query_engine
-hyde_query_engine = TransformQueryEngine(base_query_engine, query_transform=hyde)
+#hyde_query_engine = TransformQueryEngine(base_query_engine, query_transform=hyde)
+
 
 # Step Decompose Query
-#step_decompose_transform = StepDecomposeQueryTransform(llm, verbose=True)
-#step_decompose_query_engine = MultiStepQueryEngine(base_query_engine, query_transform=step_decompose_transform)
+synthesizer = get_response_synthesizer(llm=llm)
+step_decompose_transform = StepDecomposeQueryTransform(llm, verbose=True)
+step_decompose_query_engine = MultiStepQueryEngine(base_query_engine, query_transform=step_decompose_transform, response_synthesizer=synthesizer)
 
 with open('./files/eval_questions.json', 'r') as f:
     questions = json.load(f)
@@ -128,7 +137,7 @@ for q in questions:
     answer = q['answer']
     
     logger.info(f"Querying: {question}")
-    response = hyde_query_engine.query(question) 
+    #response = hyde_query_engine.query(question) 
     response = step_decompose_query_engine.query(question)
     logger.info(f"Response: {response}")
 
@@ -139,7 +148,7 @@ for q in questions:
         "ground_truth": answer
     })
 
-with open('./files/generated_answer/advanced_linear_2.json', 'w') as f:
+with open('./files/generated_answer/advanced_linear_opt_2.json', 'w') as f:
     json.dump(records, f)
 
 # Ragas evaluation 
