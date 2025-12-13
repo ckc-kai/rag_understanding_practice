@@ -8,6 +8,8 @@ def setup_logger(level=logging.INFO):
     logger = logging.getLogger()
     logger.setLevel(level)
 
+    if logger.handlers:
+        return logger
     handler = logging.StreamHandler()
     formatter = ColoredFormatter(
         "%(log_color)s[%(asctime)s] [%(levelname)s] "

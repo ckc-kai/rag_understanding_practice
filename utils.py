@@ -4,7 +4,6 @@ from llama_index.core.node_parser import SentenceSplitter
 import fitz
 from config import setup_logger
 
-setup_logger()
 logger = logging.getLogger(__name__)
 
 def get_chapter_nodes(pdf_path):

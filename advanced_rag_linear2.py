@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 llm = Ollama(model="deepseek-r1:7b", request_timeout=1200.0, context_window=8192)
 embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5", device="cpu")
 
-from files.utils import get_chapter_nodes
+from utils import get_chapter_nodes
 
 # logger.info("Loading documents...")
 # documents = SimpleDirectoryReader(
@@ -120,13 +120,13 @@ base_query_engine = RetrieverQueryEngine.from_args(
 
 # Wrap with HyDE
 # Note: TransformQueryEngine applies the transform (HyDE) to the query BEFORE passing it to base_query_engine
-#hyde_query_engine = TransformQueryEngine(base_query_engine, query_transform=hyde)
+hyde_query_engine = TransformQueryEngine(base_query_engine, query_transform=hyde)
 
 
 # Step Decompose Query
-synthesizer = get_response_synthesizer(llm=llm)
-step_decompose_transform = StepDecomposeQueryTransform(llm, verbose=True)
-step_decompose_query_engine = MultiStepQueryEngine(base_query_engine, query_transform=step_decompose_transform, response_synthesizer=synthesizer)
+# synthesizer = get_response_synthesizer(llm=llm)
+# step_decompose_transform = StepDecomposeQueryTransform(llm, verbose=True)
+# step_decompose_query_engine = MultiStepQueryEngine(base_query_engine, query_transform=step_decompose_transform, response_synthesizer=synthesizer)
 
 with open('./files/eval_questions.json', 'r') as f:
     questions = json.load(f)
@@ -137,8 +137,8 @@ for q in questions:
     answer = q['answer']
     
     logger.info(f"Querying: {question}")
-    #response = hyde_query_engine.query(question) 
-    response = step_decompose_query_engine.query(question)
+    response = hyde_query_engine.query(question) 
+    #response = step_decompose_query_engine.query(question)
     logger.info(f"Response: {response}")
 
     records.append({
@@ -148,7 +148,7 @@ for q in questions:
         "ground_truth": answer
     })
 
-with open('./files/generated_answer/advanced_linear_opt_2.json', 'w') as f:
+with open('./files/generated_answer/advanced_linear_2.json', 'a') as f:
     json.dump(records, f)
 
 # Ragas evaluation 
