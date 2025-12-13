@@ -3,10 +3,21 @@ from llama_index.core.schema import TextNode
 from llama_index.core.node_parser import SentenceSplitter
 import fitz
 from config import setup_logger
+from datasets import Dataset
+from ragas import evaluate, RunConfig
+from ragas.metrics import (
+    faithfulness,
+    answer_relevancy,
+    context_precision,
+    answer_correctness
+)
+from ragas.llms import llm_factory
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-def get_chapter_nodes(pdf_path):
+def get_chapter_nodes(pdf_path, lower_levels=0, upper_levels=1):
     '''
     This is a function that extract the level 1 title and page number from the pdf file.
     '''
@@ -25,7 +36,7 @@ def get_chapter_nodes(pdf_path):
     chapters = []
     for entry in toc:
         level, title, page_num = entry
-        if level == 1:
+        if level <= upper_levels and level >= lower_levels:
             start_idx = page_num - 1 
             chapters.append({
                 "title": title,
@@ -67,3 +78,42 @@ def get_chapter_nodes(pdf_path):
         
     logger.info(f"Created {len(nodes)} nodes from chapters using PyMuPDF (chunked to 512 tokens).")
     return nodes
+
+def ragas_evaluate(records):
+    '''
+    This function is used to evaluate the generated answers using Ragas.
+    The embedding model uses BAAI/bge-small-en-v1.5 and the LLM uses Qwen2.5:7b-instruct.
+    return format is a dictionary with the following keys:
+    - faithfulness
+    - answer_relevancy
+    - context_precision
+    - answer_correctness
+    '''
+    logger.info("Starting Ragas evaluation...")
+
+    ragas_embedding = HuggingFaceEmbeddings(
+        model_name="BAAI/bge-small-en-v1.5",
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True}
+    )
+
+    client = OpenAI(
+        base_url="http://localhost:11434/v1",
+        api_key="ollama"
+    )
+    rag_llm = llm_factory(
+        model="qwen2.5:7b-instruct", 
+        client=client,
+        provider="openai"
+        )
+
+    dataset = Dataset.from_list(records)
+        
+    results = evaluate(
+        dataset,
+        metrics=[faithfulness, answer_relevancy, context_precision, answer_correctness],
+        llm=rag_llm,
+        embeddings=ragas_embedding,
+        run_config=RunConfig(timeout=600, max_workers=1)
+    )
+    return results

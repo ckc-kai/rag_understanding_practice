@@ -33,7 +33,7 @@ def get_clean_toc(pdf_path):
     return cleaned_data
 
 # Usage
-#toc_data = get_clean_toc("./files/BuildTrap.pdf")
-doc = fitz.open("./files/BuildTrap.pdf")
-page = doc[136]
-print(page.get_text())
+toc_data = get_clean_toc("./files/AgenticDesign/Agentic_Design_Pattern.pdf")
+# doc = fitz.open("./files/BuildTrap.pdf")
+# page = doc[136]
+# print(page.get_text())
