@@ -117,7 +117,15 @@ async def main():
             contexts = []
             if hasattr(response, 'source_nodes'):
                 contexts = [node.node.get_text() for node in response.source_nodes]
-                    
+            if hasattr(response, 'sources'):
+                for tool_output in response.sources:
+                    # The tool_output object typically contains the raw result from the QueryEngine
+                    # We need to access 'raw_output' which is the actual Response object containing source_nodes
+                    if hasattr(tool_output, 'raw_output') and tool_output.raw_output is not None:
+                        raw = tool_output.raw_output
+                        if hasattr(raw, 'source_nodes'):
+                            contexts.extend([node.node.get_text() for node in raw.source_nodes])
+
             if not contexts:
                 contexts = ["No context retrieved."]
         
