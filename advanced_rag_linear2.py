@@ -26,18 +26,100 @@ from llama_index.core import SimpleDirectoryReader
 import json
 import Stemmer 
 import fitz
-
+from utils import get_chapter_nodes, answer_questions, evaluate_records
 from config import setup_logger
 
-setup_logger()
 logger = logging.getLogger(__name__)
 
-# Objectives: include HyDE, BM25
+class linear_rag_chapter_based():
+    '''
+    This workflow is based on the linear base rag.
+    Some advanced features include:
+    1. chunk based on chapter content
+    2. Hybrid Search (BM25 + Vector)
+    3. HyDE Query Transform
+    '''
+    def __init__(self, llm, embed_model, document_path):
+        self.llm = llm
+        self.embed_model = embed_model
+        self.document_path = document_path
+        self.query_engine = None 
+
+    def setup_rag(self):
+        logger.info("Start to setup the rag...")
+        
+        leaf_nodes = get_chapter_nodes(self.document_path, 1, 4)
+        storage_context = StorageContext.from_defaults()
+        storage_context.docstore.add_documents(leaf_nodes)
+
+        vector_index = VectorStoreIndex(
+            leaf_nodes,
+            storage_context=storage_context,
+            embed_model=self.embed_model,
+            llm=self.llm
+        )
+        logger.info("Sparse Search with BM25...")
+        bm25_retriever = BM25Retriever.from_defaults(
+            nodes = leaf_nodes,
+            similarity_top_k=7,
+            stemmer=Stemmer.Stemmer("english"),
+            language="english"
+        )
+        vector_retriever = vector_index.as_retriever(similarity_top_k=7)
+        logger.info("Hybrid Fusion Search with Sparse and Dense Search...")
+        fusion_retriever = QueryFusionRetriever(
+            [bm25_retriever, vector_retriever],
+            similarity_top_k=5,
+            num_queries=1,
+            mode="reciprocal_rerank",
+            use_async=False,
+            verbose=True,
+            llm=self.llm
+        )
+        
+        logger.info("Reranking...")
+        reranker = SentenceTransformerRerank(
+            model="BAAI/bge-reranker-base",
+            top_n=3,
+            device="cpu"
+        )
+
+        logger.info("Setup HyDE...")
+        hyde = HyDEQueryTransform(include_original=True, llm=self.llm)
+
+        logger.info("Assembling Query Engine...")
+        base_query_engine = RetrieverQueryEngine.from_args(
+            retriever=fusion_retriever,
+            llm=self.llm,
+            node_postprocessors=[reranker]
+        )
+
+        hyde_query_engine = TransformQueryEngine(
+            base_query_engine=base_query_engine,
+            transform=hyde,
+            llm=self.llm
+        )
+
+        self.query_engine = hyde_query_engine
+
+    def query(self, query):
+        if not self.query_engine:
+            raise ValueError("Query engine is not initialized. Please call setup_rag() first.")
+        return self.query_engine.query(query)
+
+
+    def answer(self, question_path, out_path):
+        logger.info("Running query engine to answer questions...")
+        evaluate_records = answer_questions(question_path, out_path, self.query_engine)
+        return evaluate_records 
+    def evaluate(self, question_path, out_path):
+        logger.info("Running Ragas Evaluation...")
+        evaluate_results = evaluate_records(question_path, out_path, self.llm, self.embed_model)
+        return evaluate_results 
+# Objectives: include HyDE, BM2
 
 llm = Ollama(model="deepseek-r1:7b", request_timeout=1200.0, context_window=8192)
 embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5", device="cpu")
-
-from utils import get_chapter_nodes
 
 # logger.info("Loading documents...")
 # documents = SimpleDirectoryReader(

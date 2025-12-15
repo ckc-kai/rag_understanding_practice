@@ -14,7 +14,9 @@ from ragas.metrics import (
 from ragas.llms import llm_factory
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from openai import OpenAI
-
+import os
+import json
+from datetime import datetime
 logger = logging.getLogger(__name__)
 
 def get_chapter_nodes(pdf_path, lower_levels=0, upper_levels=1):
@@ -117,3 +119,85 @@ def ragas_evaluate(records):
         run_config=RunConfig(timeout=600, max_workers=1)
     )
     return results
+
+def answer_questions(question_path, output_path, query_engine):
+    '''
+        This function is used to evaluate the generated answers using Ragas.
+        The embedding model uses BAAI/bge-small-en-v1.5 and the LLM uses Qwen2.5:7b-instruct.
+        return format is a dictionary with the following keys:
+        - faithfulness
+        - answer_relevancy
+        - context_precision
+        - answer_correctness
+        return format is a list of dictionaries with the following keys:
+        - user_input
+        - response
+        - retrieved_contexts
+        - reference
+    '''
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    os.makedirs(os.path.dirname(question_path), exist_ok=True)
+
+    # Load questions
+    with open(question_path, 'r') as f:
+        questions = json.load(f)
+        
+    if len(questions) == 0:
+        raise ValueError("No questions found in the question file.")
+    if not query_engine:
+        raise ValueError("Query engine not initialized.")
+        
+    eval_records = []
+    for q in questions:
+        question = q['question']
+        answer = q['answer']
+            
+        response = query_engine.query(question)
+            
+        logger.info(f"Answered: {question}")
+        eval_records.append({
+            "user_input": question,
+            "response": str(response),
+            "retrieved_contexts": [n.text for n in response.source_nodes],
+            "reference": answer,
+        })
+        
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    file_records = [{"timestamp": timestamp}] + eval_records
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    data = []
+    if os.path.exists(output_path):
+        with open(output_path,"r") as f:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError:
+                data = []
+                    
+    if isinstance(data, list):
+        data.append(file_records) 
+    else:
+        data = [file_records]
+
+    with open(output_path, 'w') as f:
+        json.dump(data, f, indent=2)
+    
+    return eval_records
+
+def evaluate_records(records, output_path):
+        # record 
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        data = []
+        if os.path.exists(output_path):
+            with open(output_path,"r") as f:
+                try:
+                    data = json.load(f)
+                except json.JSONDecodeError:
+                    data = []
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        evaluate_result = ragas_evaluate(records)
+        
+        logger.info("Evaluation complete.")
+        
+        return evaluate_result

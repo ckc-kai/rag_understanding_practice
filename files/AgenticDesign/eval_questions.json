@@ -1,0 +1,26 @@
+[
+    {
+        "question": "What is the fundamental difference between a Standard RAG pipeline and an Agentic RAG?",
+        "answer": "A Standard RAG pipeline is linear and deterministic: Input $\rightarrow$ Retrieve $\rightarrow$ Answer. It cannot change course if the retrieval is bad. An Agentic RAG creates a reasoning loop. It treats the retrieval system as a 'Tool.' The agent decides what to search, evaluates if the search result is sufficient, and can choose to search again with different keywords or give up. It adds a 'Reasoning' step before the 'Generation' step."
+    },
+    {
+        "question": "What is 'Tool Calling' (or Function Calling) in the context of Agents?",
+        "answer": "Tool calling is the capability of an LLM to output structured JSON data instead of text when it needs to perform an action. For example, instead of replying 'I'll check the weather,' the LLM outputs {\"tool\": \"get_weather\", \"args\": {\"location\": \"London\"}}. The system executes this code and feeds the result back to the LLM. It is the bridge between the LLM's logic and external software execution."
+    },
+    {
+        "question": "Explain the ReAct pattern. Why is it more effective than a standard prompt?",
+        "answer": "ReAct stands for Reason + Act. Instead of asking an LLM to solve a problem in one go, this pattern forces it to loop through three steps: 1. Thought: 'I need to find the user's username first.' 2. Action: Calls get_user_info(id=123). 3. Observation: Receives 'John Doe'. Repeat. It is more effective because it reduces hallucinations by grounding every step in real data (Observations) and allows the model to self-correct if an action fails."
+    },
+    {
+        "question": "What is the 'Reflection' pattern, and when would you use it?",
+        "answer": "Reflection is a pattern where an agent critiques its own output.Workflow: Agent generates a draft $\rightarrow$ Agent prompts itself: 'Are there errors in this code?' $\rightarrow$ Agent generates critique $\rightarrow$ Agent rewrites draft based on critique.Use Case: High-stakes tasks like coding (debugging itself) or creative writing, where an iterative 'draft-revise' loop produces significantly higher quality than a zero-shot attempt."
+    },
+    {
+        "question": "In a Multi-Agent 'Orchestrator-Workers' pattern, what is the role of the Orchestrator, and what is a common risk?",
+        "answer": "Role: The Orchestrator is a 'Router' LLM. It breaks a complex user query into sub-tasks and delegates them to specialized 'Worker' agents (e.g., a 'Coder' agent and a 'Researcher' agent). It then synthesizes their results. Risk: The Bottleneck Risk. If the Orchestrator fails to decompose the task correctly or passes context poorly between workers, the entire system fails. Also, it adds latency and cost because every request passes through a 'Manager' model before work begins."
+    },
+    {
+        "question": "You are building an Agentic RAG that keeps getting stuck in an infinite loop (searching the same thing forever). How do you architecturally prevent this?",
+        "answer": "You need to implement System-Level Guardrails (not just prompt engineering): Max Iterations: Hard limit the loop (e.g., max 10 steps). Cyclic Detection: Keep a history of 'Tools Used + Arguments.' If the agent calls search(query='finance') twice in a row, the system should intercept and force a stop or a query change. Time-to-Live (TTL): A 'Global Timeout' for the entire request to ensure the agent doesn't consume infinite compute."
+    }
+]

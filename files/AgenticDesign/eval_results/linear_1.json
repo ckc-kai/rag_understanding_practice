@@ -1,0 +1,8 @@
+[
+  {
+    "faithfulness": 0.9125,
+    "answer_relevancy": 0.7523,
+    "context_precision": 0.3417,
+    "answer_correctness": 0.4388
+  }
+]
