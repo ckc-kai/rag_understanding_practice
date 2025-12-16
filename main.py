@@ -2,13 +2,14 @@ from config import setup_logger
 import os
 import logging 
 from advanced_rag_linear import linear_rag_baseline
+from advanced_rag_linear2 import linear_rag_chapter_based
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 # Runs everything here in the main
 
 TEST_DOCUMNET_PATH = "./files/AgenticDesign/Agentic_Design_Pattern.pdf"
 TEST_QUESTIONS_PATH = "./files/AgenticDesign/eval_questions.json"
-TEST_OUTPUT_PATH = "./files/AgenticDesign/generated_answer/linear_1.json"
+TEST_OUTPUT_PATH = "./files/AgenticDesign/generated_answer/linear_2.json"
 
 def model_setup(llm, embed_model):
     logger.info("Setting up model...")
@@ -24,22 +25,28 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(TEST_OUTPUT_PATH), exist_ok=True)
     llm, embed_model = model_setup("deepseek-r1:7b", "BAAI/bge-small-en-v1.5")
 
-    simple_rag = linear_rag_baseline(
+    # simple_rag = linear_rag_baseline(
+    #     document_path=TEST_DOCUMNET_PATH,
+    #     llm=llm,
+    #     embed_model=embed_model
+    # )
+    # simple_rag.setup_rag()
+
+    chapter_rag = linear_rag_chapter_based(
         document_path=TEST_DOCUMNET_PATH,
         llm=llm,
         embed_model=embed_model
     )
-    simple_rag.setup_rag()
+    chapter_rag.setup_rag()
 
-    records = simple_rag.answer(
-        questions_path=TEST_QUESTIONS_PATH,
-        output_path=TEST_OUTPUT_PATH
+    records = chapter_rag.answer(
+        question_path=TEST_QUESTIONS_PATH,
+        out_path=TEST_OUTPUT_PATH
     )
 
     # Ragas evaluation
-    results = simple_rag.evaluate(
+    results = chapter_rag.evaluate(
         records=records,
-        output_path="./files/AgenticDesign/eval_results/linear_1.json"
     )
     logger.info(f"Ragas results: {results}")
 

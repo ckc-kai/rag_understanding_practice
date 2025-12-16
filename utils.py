@@ -184,20 +184,3 @@ def answer_questions(question_path, output_path, query_engine):
     
     return eval_records
 
-def evaluate_records(records, output_path):
-        # record 
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        data = []
-        if os.path.exists(output_path):
-            with open(output_path,"r") as f:
-                try:
-                    data = json.load(f)
-                except json.JSONDecodeError:
-                    data = []
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        evaluate_result = ragas_evaluate(records)
-        
-        logger.info("Evaluation complete.")
-        
-        return evaluate_result

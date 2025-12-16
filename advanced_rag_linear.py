@@ -19,7 +19,7 @@ from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core import SimpleDirectoryReader
 import json
-from utils import ragas_evaluate, answer_questions, evaluate_records
+from utils import ragas_evaluate, answer_questions
 from config import setup_logger
 import os
 logger = logging.getLogger(__name__)
@@ -101,8 +101,8 @@ class linear_rag_baseline():
         eval_records = answer_questions(questions_path, output_path, self.query_engine)
         return eval_records
 
-    def evaluate(self, records, output_path):
+    def evaluate(self, records):
         logger.info("Running Ragas Evaluation...")
-        evaluate_results = evaluate_records(records, output_path)
+        evaluate_results = ragas_evaluate(records)
         return evaluate_results
         
