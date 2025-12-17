@@ -4,13 +4,17 @@ books:
     pdf_path: "./files/BuildTrap/BuildTrap.pdf"
     category: "product_management"
     description: |
-      'Escaping the Build Trap' by Melissa Perri - Comprehensive guide on 
-      building products that matter, avoiding the build trap, and creating 
-      value-driven product organizations.
+      'Escaping the Build Trap' by Melissa Perri. Covers the "Build Trap",
+      Product Manager Archetypes (The Waiter, The Architect, etc), Strategy Deployment,
+      Strategic Gaps (Stephen Bungay), and value-driven product management.
     keywords:
       - product management
       - build trap
       - product strategy
+      - product manager archetypes
+      - strategy deployment
+      - strategic gaps
+      - stephen bungay
       - value exchange
       - product-market fit
       - product operations

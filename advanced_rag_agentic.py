@@ -3,7 +3,11 @@ from llama_index.core import VectorStoreIndex
 from llama_index.core.tools import QueryEngineTool, ToolMetadata, FunctionTool
 from llama_index.core.agent.workflow import ReActAgent
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.core.postprocessor import SimilarityPostprocessor
+from llama_index.core.postprocessor import SimilarityPostprocessor, SentenceTransformerRerank
+from llama_index.core.retrievers import QueryFusionRetriever
+from llama_index.retrievers.bm25 import BM25Retriever
+from llama_index.core.query_engine import RetrieverQueryEngine
+import Stemmer
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.llms.ollama import Ollama
 import logging
@@ -11,7 +15,7 @@ import json
 import os
 import yaml
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Set
 from datasets import Dataset
 from ragas import evaluate, RunConfig
 from ragas.metrics import (
@@ -23,17 +27,13 @@ from ragas.metrics import (
 from ragas.llms import llm_factory
 from openai import OpenAI
 import fitz
-from utils import get_chapter_nodes, ragas_evaluate
+from utils import get_chapter_nodes, ragas_evaluate, extract_contexts_from_agent_response
 from collections import defaultdict
 from configs.config import setup_logger
 logger = logging.getLogger(__name__)
 from dataclasses import dataclass, asdict
 import numpy as np
 import asyncio
-
-#TODO: Context is not accurate + Did not retrieve any context?
-#TODO: Book_used is not accurate.
-#TODO: Prompt Engineering
 
 
 @dataclass
@@ -210,6 +210,7 @@ Task: Create a comprehensive answer that:
 2. Highlights agreements and disagreements between sources
 3. Provides a balanced perspective
 4. Cites which book each piece of information comes from
+5. Build the bridge to connect the dots between different books
 
 Synthesized Answer:"""
         
@@ -334,40 +335,53 @@ class QueryPlanner:
     """
     Plans to execute queries
     """
-    def __init__(self, llm, available_books: List[str]):
+    def __init__(self, llm, available_books: List[BookConfig]):
         self.llm = llm
         self.available_books = available_books
     
     def create_plan(self, question: str, memory: Optional[AgenticMemory] = None) -> Dict[str, Any]:
         suggested_books = []
         if memory:
+            # Get all suggestions without slicing
             suggested_books = memory.suggest_books(question)
             logger.info(f"Memory suggested books: {suggested_books}")
             
-        books_str = ", ".join(self.available_books)
-        suggestions_str = ", ".join(suggested_books[:3]) if suggested_books else "None"
+        # Format detailed book info for the prompt
+        books_info = "\n".join([
+            f"- Name: {b.name}\n  Description: {b.description}\n  Keywords: {', '.join(b.keywords)}"
+            for b in self.available_books
+        ])
         
-        prompt = f"""Create an execution plan to answer this question using available books.
+        prompt = f"""Create an execution plan to answer this question.
+You have access to the following books. You must be CRITICAL in selecting books. 
+Ask yourself: "Do I really need this book? Does the question's intent match the book's description and keywords?"
+Only select a book if it is strictly necessary.
+
+Available Books:
+{books_info}
+
+Previously successful books for similar questions: {', '.join(suggested_books) if suggested_books else "None"}
 
 Question: {question}
 
-Available books: {books_str}
-Previously successful books for similar questions: {suggestions_str}
-
-Create a plan with these steps:
-1. Identify key concepts/topics in the question
-2. Determine which book(s) are most relevant
-3. Decide if the question needs to be broken down
-4. Plan whether to query one book or multiple books
-5. Decide if cross-book synthesis is needed
+Tasks:
+1. Analyze the question's core intent.
+2. Determine if the question contains multiple distinct sub-questions (regardless of complexity).
+   - "dependent": Question parts must be answered in order (e.g., "Find X, then use X to do Y").
+   - "independent": Question parts can be answered separately (e.g., "What is A and what is B?").
+   - "none": The question is a single, atomic unit.
+   *CRITICAL*: Even if a question is simple (e.g., "Define A and B"), if it asks for two distinct things, it NEEDS decomposition into Independent sub-queries.
+3. Select ONLY the books that are relevant based on their name, description, and keywords. Do not select a book just because it is available.
+4. If the question involves multiple books, select all books that are relevant to the question.
 
 Return ONLY a JSON object:
 {{
   "complexity": "simple|moderate|complex",
   "needs_decomposition": True/False,
-  "books_to_query": ["book1", "book2"],
+  "decomposition_mode": "dependent|independent|none",
+  "books_to_query": ["book(s)"],
   "needs_synthesis": True/False,
-  "reasoning": "why this plan"
+  "reasoning": "Detailed reasoning for book selection and decomposition"
 }}
 
 Plan:"""
@@ -397,20 +411,20 @@ Plan:"""
                 "books_to_query": [self.available_books[0]],
                 "needs_synthesis": False
             }
-# Orchestrator
 
+# Orchestrator
 class AgentOrchestrator:
-    def __init__(self, agent: ReActAgent, llm, embed_model, book_names:List[str]):
+    def __init__(self, agent: ReActAgent, llm, embed_model, book_configs:List[BookConfig]):
         self.agent = agent
         self.llm = llm
         self.embed_model = embed_model
-        self.book_names = book_names
+        self.book_configs = book_configs
         
         self.decomposer = QueryDecomposer(llm)
         self.validator = AnswerValidator(llm)
         self.synthesizer = CrossBookSynthesizer(llm)
         self.long_term_memory = AgenticMemory(embed_model)
-        self.planner = QueryPlanner(llm, book_names)
+        self.planner = QueryPlanner(llm, book_configs)
 
         self.stats = {
             "total_queries": 0,
@@ -419,6 +433,125 @@ class AgentOrchestrator:
             "retries": 0,
             "syntheses": 0
         }
+    async def _execute_sub_queries(self, sub_queries: List[str], plan: Dict[str, Any]) -> Tuple[Dict[str, str], List[str], List[str]]:
+        """
+        Execute sub-queries based on dependency mode (dependent vs independent).
+
+        Args:
+            sub_queries (List[str]): List of sub-queries to execute.
+            plan (Dict[str, Any]): Execution plan containing decomposition mode.
+        Returns:
+            Tuple[Dict[str, str], List[str], List[str]]: Tuple containing book answers, contexts, and used books.
+        """
+        mode = plan.get("decomposition_mode", "independent")
+        all_book_answers = {}
+        all_contexts = []
+        all_books_used = set()
+        
+        if mode == "dependent":
+            logger.info("[EXECUTION] Running DEPENDENT sub-queries...")
+            context_accumulator = ""
+            for i, sq in enumerate(sub_queries):
+                # Augment subsequent queries with previous context
+                current_query = sq
+                if context_accumulator:
+                    current_query = f"{sq}\n\nContext from previous steps:\n{context_accumulator}"
+                
+                logger.info(f"[STEP {i+1}] Querying: {sq}")
+                step_answers, step_contexts, step_books = await self._execute_single_step(current_query, plan)
+                
+                # Accumulate answers
+                step_combined_answer = "\n".join(step_answers.values())
+                context_accumulator += f"\n-- Step {i+1} Answer --\n{step_combined_answer}"
+                
+                # Merge answers
+                all_book_answers.update(step_answers)
+                all_contexts.extend(step_contexts)
+                all_books_used.update(step_books)
+                
+        else:
+            #TODO: This Independent sub-queries are still running sequentially.
+            logger.info("[EXECUTION] Running INDEPENDENT sub-queries...")
+            for i, sq in enumerate(sub_queries):
+                logger.info(f"[STEP {i+1}] Querying: {sq}")
+                step_answers, step_contexts, step_books = await self._execute_single_step(sq, plan)
+                
+                for book, ans in step_answers.items():
+                    if book in all_book_answers:
+                        all_book_answers[book] += f"\n\n[Part {i+1}]: {ans}"
+                    else:
+                        all_book_answers[book] = f"[Part {i+1}]: {ans}"
+                all_contexts.extend(step_contexts)
+                all_books_used.update(step_books)
+                
+        return all_book_answers, all_contexts, list(all_books_used)
+
+    async def _execute_single_step(self, question: str, plan: Dict[str, Any]) -> Tuple[Dict[str, str], List[str], List[str]]:
+        """
+        Execute a single query against selected books.
+
+        Args:
+            question (str): The question to execute.
+            plan (Dict[str, Any]): The execution plan.
+        Returns:
+            Tuple[Dict[str, str], List[str], List[str]]: Tuple containing book answers, contexts, and used books.
+        """
+        book_answers = {}
+        contexts = []
+        used_books = set()
+        
+        target_books = plan.get("books_to_query", [])
+        if not target_books:
+            logger.info("[EXECUTION] No books selected by planner. Returning early.")
+            return {
+                "agent_response": "No relevant books found in the library to answer this specific question based on the planner's assessment."
+            }, [], [] 
+
+        if len(target_books) > 1:
+            logger.info(f"[MULTI-BOOK] Querying {len(target_books)} books: {target_books}")
+            self.stats["multi_book_queries"] += 1
+        
+        hint_resources = [f"{b}_Tool" for b in target_books]
+        augmented_question = f"{question} (Based on your planning, strictly use these resources: {', '.join(hint_resources)})"
+        
+        try:
+            response = await self.agent.run(augmented_question)
+            
+            # Extract answer
+            book_answers["agent_response"] = str(response)
+            
+            # Debugging: Log what we got
+            logger.info(f"Agent response type: {type(response)}")
+            logger.info(f"Has sources: {hasattr(response, 'sources')}")
+            if hasattr(response, "sources"):
+                for s in response.sources:
+                    logger.info(f"Tool: {s.tool_name}")
+                    logger.info(f"Raw output type: {type(s.raw_output)}")
+                    logger.info(
+                        f"Source nodes count: {len(getattr(s.raw_output, 'source_nodes', []))}"
+                    )
+
+
+            # Extract tools used
+            if hasattr(response, "sources"):
+                for tool_output in response.sources:
+                    if hasattr(tool_output, "tool_name"):
+                         t_name = tool_output.tool_name
+                         # Assuming tool naming convention "{book_name}_Tool"
+                         if t_name.endswith("_Tool"):
+                             b_name = t_name.replace("_Tool", "")
+                             used_books.add(b_name)
+                         else:
+                             used_books.add(t_name)
+
+                contexts.extend(extract_contexts_from_agent_response(response))
+
+        except Exception as e:
+            logger.error(f"[EXECUTION] Query failed: {e}")
+            book_answers["error"] = str(e)
+            
+        return book_answers, contexts, list(used_books)
+
     async def query(self, question: str, max_retries: int = 2) -> Dict[str, Any]:
         self.stats["total_queries"] += 1
         logger.info(f"AGENTIC QUERY: {question}")
@@ -435,50 +568,12 @@ class AgentOrchestrator:
             sub_queries = self.decomposer.decompose(question)
             self.stats["decomposed_queries"] += 1
         
-        # 3. Execute sub-queries
-        book_answers = {}
-        all_contexts = []
-
-        if len(plan.get("books_to_query", [])) > 1:
-            logger.info(f"[MULTI-BOOK] Querying {len(plan['books_to_query'])} books")
-            self.stats["multi_book_queries"] += 1
+        # 3. Execute logic (Dependent/Independent/Single)
+        book_answers, all_contexts, books_used = await self._execute_sub_queries(sub_queries, plan)
         
-            # Query each book
-            for book_name in plan.get("books_to_query", []):
-                logger.info(f"[BOOK] Querying book: {book_name}")
-                try:
-                    response = await self.agent.run(question)
-                    book_answers[book_name] = str(response)
-                    if hasattr(response, "source_nodes"):
-                        all_contexts.extend([node.node.get_content() 
-                                for node in response.source_nodes])
-                    else:
-                        all_contexts.append(str(response))
-                except Exception as e:
-                    logger.error(f"[BOOK] Query failed: {e}")
-        else:
-            logger.info("\n[SINGLE-BOOK QUERY] Querying agent...")
-            try:
-                response = await self.agent.run(question)
-                
-                book_name = plan.get("books_to_query", [])
-                if book_name:
-                    book_name = book_name[0]
-                else:
-                    book_name = "primary"
-                
-                book_answers[book_name] = str(response)
-                
-                if hasattr(response, "source_nodes"):
-                        all_contexts.extend([node.node.get_content() 
-                                for node in response.source_nodes])
-            except Exception as e:
-                logger.error(f"[BOOK] Query failed: {e}")
-                book_answers["primary"] = f"Error: {e}"
-        
-        # 4. Synthesize if multiple books were queried
+        # 4. Synthesize if needed (Already partly handled by accumulating answers, but we might want a final polish)
         if len(book_answers) > 1 and bool(plan.get("needs_synthesis", False)):
-            logger.info("[SYNTHESIS] Combining resources from multiple books...")
+            logger.info("[SYNTHESIS] Combining resources...")
             try:
                 final_answer = self.synthesizer.synthesize(question=question, book_answers=book_answers)
                 self.stats["syntheses"] += 1
@@ -489,6 +584,7 @@ class AgentOrchestrator:
             final_answer = list(book_answers.values())[0] if book_answers else "No answer found"
         
         logger.info(f"Final answer: {final_answer}")
+        
         # 5. Validate answer quality
         logger.info("[VALIDATION] Validating answer quality...")
         validation = self.validator.validate(question=question, answer=final_answer, context=all_contexts)
@@ -509,16 +605,19 @@ class AgentOrchestrator:
                 response = await self.agent.run(retry_prompt)
                 
                 final_answer = str(response)
+                logger.info(f"[RETRY] Validated New Answer: {final_answer}")
+                # Append new contexts
                 if hasattr(response, "source_nodes"):
-                    all_contexts.extend([node.node.get_content() 
-                                    for node in response.source_nodes])
+                    all_contexts.extend([node.node.get_content() for node in response.source_nodes])
+                
                 validation = self.validator.validate(question=question, answer=final_answer, context=all_contexts)
             except Exception as e:
                 logger.error(f"[RETRY] Retry failed: {e}")
                 break
         
         # 7. Record to long-term memory
-        books_used = list(book_answers.keys())
+        # books_used is now accurately populated from execution steps
+        
         success = bool(validation.get("is_adequate", True))
         self.long_term_memory.add_query(
             question=question,
@@ -600,7 +699,54 @@ class Librarian:
                         logger.info(f"Persisting index for {book.name} to cache...")
                         vector_index.storage_context.persist(persist_dir=book_cache_path)
 
-                query_engine = vector_index.as_query_engine(llm=self.llm)
+                # --- Hybrid Search Setup ---
+                logger.info(f"Setting up Hybrid Search for {book.name}...")
+                
+                # BM25 Retriever (Sparse)
+                # Note: We need nodes for BM25. If loaded from disk, we might need to reconstruct them or load docstore.
+                if 'nodes' not in locals():
+                     nodes = list(vector_index.docstore.docs.values())
+                
+                bm25_retriever = BM25Retriever.from_defaults(
+                    nodes=nodes,
+                    similarity_top_k=self.config.retrieval_config.similarity_top_k * 2, # Fetch more for fusion
+                    stemmer=Stemmer.Stemmer("english"),
+                    language="english"
+                )
+
+                # Vector Retriever (Dense)
+                vector_retriever = vector_index.as_retriever(
+                    similarity_top_k=self.config.retrieval_config.similarity_top_k * 2
+                )
+
+                # Fusion Retriever  (Combine both sparse and dense)
+                fusion_retriever = QueryFusionRetriever(
+                    [bm25_retriever, vector_retriever],
+                    similarity_top_k=self.config.retrieval_config.similarity_top_k, 
+                    num_queries=1, 
+                    mode="reciprocal_rerank",
+                    use_async=False,
+                    verbose=True,
+                    llm=self.llm
+                )
+
+                # 4. Reranker
+                if self.config.retrieval_config.use_reranking:
+                    reranker = SentenceTransformerRerank(
+                        model=self.config.retrieval_config.rerank_model,
+                        top_n=self.config.retrieval_config.rerank_top_n,
+                        device="cpu"
+                    )
+                    node_postprocessors = [reranker]
+                else:
+                    node_postprocessors = []
+
+                # 5. Query Engine
+                query_engine = RetrieverQueryEngine.from_args(
+                    retriever=fusion_retriever,
+                    llm=self.llm,
+                    node_postprocessors=node_postprocessors
+                )
 
                 # Create tools
                 tool = QueryEngineTool(
@@ -634,6 +780,8 @@ class Librarian:
                 "You can reason through complex questions, query multiple books if needed, "
                 "and synthesize information from different sources. "
                 "Think step-by-step and explain your reasoning."
+                "You MUST use at least one tool to answer. "
+                "If nothing is found or no tools are used, answer with 'I don't know from current library.'"
             ),
             memory=short_term_memory,
         )
@@ -643,7 +791,7 @@ class Librarian:
             llm = self.llm,
             agent = self.agent,
             embed_model = self.embed_model,
-            book_names = self.book_names
+            book_configs = self.config.books
         )
     async def query(self, question: str):
         return await self.orchestrator.query(question)

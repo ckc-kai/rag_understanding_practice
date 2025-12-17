@@ -85,11 +85,14 @@ def ragas_evaluate(records):
     '''
     This function is used to evaluate the generated answers using Ragas.
     The embedding model uses BAAI/bge-small-en-v1.5 and the LLM uses Qwen2.5:7b-instruct.
-    return format is a dictionary with the following keys:
-    - faithfulness
-    - answer_relevancy
-    - context_precision
-    - answer_correctness
+    Args:
+        records (list): List of records to evaluate.
+    Returns:
+        dict: Dictionary with the following keys:
+        - faithfulness
+        - answer_relevancy
+        - context_precision
+        - answer_correctness
     '''
     logger.info("Starting Ragas evaluation...")
 
@@ -184,3 +187,35 @@ def answer_questions(question_path, output_path, query_engine):
     
     return eval_records
 
+def extract_contexts_from_agent_response(response):
+    '''
+    Extract contexts from agent response.
+    Args:
+        response (object): Agent response object.
+    Returns:
+        list: List of contexts.
+    '''
+    contexts = []
+
+    if not hasattr(response, "sources"):
+        return contexts
+
+    for tool_output in response.sources:
+        raw = getattr(tool_output, "raw_output", None)
+        if raw is None:
+            continue
+
+        source_nodes = getattr(raw, "source_nodes", None)
+        if not source_nodes:
+            continue
+
+        for node_with_score in source_nodes:
+            node = getattr(node_with_score, "node", None)
+            if node is None:
+                continue
+
+            text = node.get_content()
+            if text:
+                contexts.append(text)
+
+    return contexts

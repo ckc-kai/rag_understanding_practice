@@ -1,22 +1,22 @@
 [
     {
-        "question": "According to the text, what is the definition of the 'Build Trap'?",
+        "question": "According to the Build Trap book, what is the definition of the 'Build Trap'?",
         "answer": "The build trap is when organizations become stuck measuring their success by outputs rather than outcomes. It occurs when they focus more on shipping and developing features rather than on the actual value those things produce."
     },
     {
-        "question": "The text outlines three 'Bad Product Manager Archetypes.' List them and briefly explain the 'Waiter' archetype.",
+        "question": "The Build Trap book outlines three 'Bad Product Manager Archetypes.' List them and briefly explain the 'Waiter' archetype.",
         "answer": "The three archetypes are: 1.The Mini-CEO; 2.The Waiter; 3.The Former Project Manager. The Waiter is a product manager who is, at heart, an order taker. They go to stakeholders, customers, or managers, ask for what they want, and turn those wants into a list of items to be developed. They have no goal, no vision, and no decision-making involvement; they often struggle to prioritize because it becomes a popularity contest."
     },
     {
-        "question": "What are the four levels of 'Strategy Deployment' described in the text, and who is responsible for the 'Strategic Intent' level?",
+        "question": "What are the four levels of 'Strategy Deployment' described in the Build Trap book, and who is responsible for the 'Strategic Intent' level?",
         "answer": "1. Vision (What do we want to be in 5–10 years?);. 2. Strategic Intent (What business challenges are standing in our way?); 3. Product Initiative (What problems can we address to tackle the challenge?); 4. Options (What are the different ways we can address those problems?)"
     },
     {
-        "question": "In the Marquetly case study regarding the teacher platform, the team initially thought the problem was the 'clumsy workflow' of the website. Through the 'Product Kata' and research, what did they discover was the actual root cause of low course publication rates, and how did they validate the solution before building software?",
+        "question": "In the book Build Trap, Marquetly case study regarding the teacher platform, the team initially thought the problem was the 'clumsy workflow' of the website. Through the 'Product Kata' and research, what did they discover was the actual root cause of low course publication rates, and how did they validate the solution before building software?",
         "answer": "Actual Root Cause: The team discovered that video editing was the biggest pain point. Teachers were spending upward of 80 hours over two months editing videos, or reshooting them to avoid editing, because they were marketing experts, not video experts. Validation: They ran a Concierge Experiment. The team pitched a video-editing service to teachers and manually edited videos for them for two weeks. This resulted in a publish rate increase from 25% to 75%, validating that solving the video editing problem would achieve their business goals."
     },
     {
-        "question": "Explain the 'Strategic Gaps' identified by Stephen Bungay (The Knowledge Gap, The Alignment Gap, and The Effects Gap). For the 'Alignment Gap,' describe how organizations typically try to fill it incorrectly versus what they should do according to the text.",
+        "question": "From the Build Trap book, Explain the 'Strategic Gaps' identified by Stephen Bungay (The Knowledge Gap, The Alignment Gap, and The Effects Gap). For the 'Alignment Gap,' describe how organizations typically try to fill it incorrectly versus what they should do according to the text.",
         "answer": "The Knowledge Gap: The difference between what management would like to know and what the company actually knows. The Alignment Gap: The difference between what people do and what management wants them to do. The Effects Gap: The difference between what we expect our actions to achieve and what they actually achieve. Addressing the Alignment Gap: Incorrect Method: Organizations often try to fill this gap by providing more detailed instructions and passing down specific feature requests/mandates. Correct Method: Organizations should allow each level within the company to define how it will achieve the intent of the next level up. Leadership should align every level around the 'why' and give the next layer the freedom to figure out the 'how' (the solution) and report back."
     }
 ]

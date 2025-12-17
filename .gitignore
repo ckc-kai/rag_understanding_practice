@@ -9,3 +9,4 @@ venv/
 requirements.lock.txt
 files/BuildTrap/BuildTrap.pdf
 files/AgenticDesign/AgenticDesign.pdf
+cache/
