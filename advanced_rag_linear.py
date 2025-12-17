@@ -20,7 +20,7 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core import SimpleDirectoryReader
 import json
 from utils import ragas_evaluate, answer_questions
-from config import setup_logger
+from configs.config import setup_logger
 import os
 logger = logging.getLogger(__name__)
 from datetime import datetime

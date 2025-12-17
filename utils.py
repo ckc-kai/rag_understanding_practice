@@ -2,7 +2,7 @@ import logging
 from llama_index.core.schema import TextNode
 from llama_index.core.node_parser import SentenceSplitter
 import fitz
-from config import setup_logger
+from configs.config import setup_logger
 from datasets import Dataset
 from ragas import evaluate, RunConfig
 from ragas.metrics import (
@@ -19,7 +19,7 @@ import json
 from datetime import datetime
 logger = logging.getLogger(__name__)
 
-def get_chapter_nodes(pdf_path, lower_levels=0, upper_levels=1):
+def get_chapter_nodes(pdf_path, upper_levels=9999):
     '''
     This is a function that extract the level 1 title and page number from the pdf file.
     '''
@@ -38,7 +38,7 @@ def get_chapter_nodes(pdf_path, lower_levels=0, upper_levels=1):
     chapters = []
     for entry in toc:
         level, title, page_num = entry
-        if level <= upper_levels and level >= lower_levels:
+        if level <= upper_levels:
             start_idx = page_num - 1 
             chapters.append({
                 "title": title,

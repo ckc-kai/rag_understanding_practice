@@ -34,6 +34,11 @@ def get_clean_toc(pdf_path):
 
 # Usage
 toc_data = get_clean_toc("./files/AgenticDesign/Agentic_Design_Pattern.pdf")
+print(toc_data[0])
+lowest = min(toc_data, key=lambda x: x['level'])['level']
+highest = max(toc_data, key=lambda x: x['level'])['level']
+
+print(lowest, highest)
 # doc = fitz.open("./files/BuildTrap.pdf")
 # page = doc[136]
 # print(page.get_text())

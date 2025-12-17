@@ -27,7 +27,7 @@ import json
 import Stemmer 
 import fitz
 from utils import get_chapter_nodes, answer_questions, ragas_evaluate
-from config import setup_logger
+from configs.config import setup_logger
 
 logger = logging.getLogger(__name__)
 

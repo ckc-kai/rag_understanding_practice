@@ -1,0 +1,55 @@
+books:
+  # Product Management Books
+  - name: "BuildTrap"
+    pdf_path: "./files/BuildTrap/BuildTrap.pdf"
+    category: "product_management"
+    description: |
+      'Escaping the Build Trap' by Melissa Perri - Comprehensive guide on 
+      building products that matter, avoiding the build trap, and creating 
+      value-driven product organizations.
+    keywords:
+      - product management
+      - build trap
+      - product strategy
+      - value exchange
+      - product-market fit
+      - product operations
+      - outcome-driven development
+      - product metrics
+      - product culture
+      - product leadership
+
+    # Chunking strategy
+    chunk_size: 512
+    chunk_overlap: 50
+
+    # Retrieval parameters
+    similarity_top_k: 5
+    rerank_top_n: 3
+    similarity_cutoff: 0.7
+    enabled: true
+
+  # AI/ML Books
+  - name: "AgentDesign"
+    pdf_path: "./files/AgenticDesign/Agentic_Design_Pattern.pdf"
+    category: "artificial_intelligence"
+    description: |
+      'Agentic Design Patterns' - Practical guide for building sophisticated 
+      AI agents, covering ReAct patterns, tool usage, and multi-agent systems.
+    keywords:
+      - AI agents
+      - design patterns
+      - ReAct patterns
+      - agent architecture
+      - tool usage
+      - LLM agents
+      - multi-agent systems
+      - agent orchestration
+      - autonomous agents
+      - agent memory
+    chunk_size: 512
+    chunk_overlap: 50
+    similarity_top_k: 5
+    rerank_top_n: 3
+    similarity_cutoff: 0.7
+    enabled: true

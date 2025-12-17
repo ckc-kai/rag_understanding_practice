@@ -1,4 +1,4 @@
-from config import setup_logger
+from configs.config import setup_logger
 import os
 import logging 
 from advanced_rag_linear import linear_rag_baseline

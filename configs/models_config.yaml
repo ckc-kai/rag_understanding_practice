@@ -1,0 +1,62 @@
+# Models
+models:
+  # Large Language Model
+  llm:
+    model: "deepseek-r1:7b" # Ollama model name
+    request_timeout: 800.0 # Timeout in seconds
+    context_window: 4096 # Context window size
+    temperature: 0.1 # Lower = more focused, higher = more creative
+    # Add other Ollama parameters as needed:
+    # num_predict: 512
+    # top_p: 0.9
+    # top_k: 40
+
+  # Embedding Model
+  embedding:
+    model_name: "BAAI/bge-small-en-v1.5" # HuggingFace model
+    device: "cpu" # "cpu" or "cuda"
+
+# Retrivals
+retrievals:
+  # Reranking (HIGHLY RECOMMENDED for better results)
+  use_reranking: true
+  rerank_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+  # Query preprocessing
+  use_query_expansion: true # Expand abbreviations
+
+  #  Default retrieval parameters (can be overridden per book)
+  similarity_top_k: 5 # Initial retrieval count
+  rerank_top_n: 3 # Final count after reranking
+  similarity_cutoff: 0.7 # Minimum similarity threshold
+
+cache:
+  cache_dir: "./cache/indexes"
+  enabled: true
+
+agent:
+  max_iterations: 3 # Max reasoning steps
+  verbose: true # Log agent reasoning
+  return_intermediate_steps: true # Return intermediate steps
+  max_tokens: 1024 # Max tokens for agent
+
+categories:
+  product_management:
+    description: "Product management, strategy, and operations"
+    priority: 1
+
+  artificial_intelligence:
+    description: "AI, ML, LLMs, and intelligent systems"
+    priority: 1
+
+  software_engineering:
+    description: "Coding, design patterns, and best practices"
+    priority: 2
+
+  system_design:
+    description: "Architecture, scalability, and distributed systems"
+    priority: 2
+
+  business:
+    description: "Business strategy, leadership, and management"
+    priority: 3
