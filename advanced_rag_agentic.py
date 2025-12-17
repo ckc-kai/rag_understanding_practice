@@ -31,6 +31,10 @@ from dataclasses import dataclass, asdict
 import numpy as np
 import asyncio
 
+#TODO: Context is not accurate + Did not retrieve any context?
+#TODO: Book_used is not accurate.
+#TODO: Prompt Engineering
+
 
 @dataclass
 class RetrievalConfig:
@@ -697,6 +701,7 @@ class Librarian:
             return []
 
         records = []
+        records_to_save = []
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         for i, q in enumerate(questions):
@@ -715,15 +720,22 @@ class Librarian:
                     "answer": result["answer"],
                     "contexts": result["contexts"],
                     "ground_truth": ground_truth,
+                }
+                records.append(record)
+                record_to_save = {
+                    "question": question_text,
+                    "answer": result["answer"],
+                    "contexts": result["contexts"],
+                    "ground_truth": ground_truth,
                     # Optional: Store extra metadata if needed for debugging
                     "metadata": {
                         "plan": result.get("plan"),
                         "books_used": result.get("books_used"),
+                        "validation": result.get("validation"),
                         "retries": result.get("retries")
                     }
                 }
-                records.append(record)
-                
+                records_to_save.append(record_to_save)
             except Exception as e:
                 logger.error(f"Error processing query '{question_text}': {e}")
                 continue
@@ -733,7 +745,7 @@ class Librarian:
             # We save a format similar to what utils.answer_questions produces, 
             # or simply the records list which contains everything.
             time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            records_to_save = [{"timestamp": time_stamp}]+ records
+            to_save = [{"timestamp": time_stamp}]+ records_to_save
             data = []
             if os.path.exists(output_path):
                 with open(output_path,"r") as f:
@@ -743,9 +755,9 @@ class Librarian:
                         data = []
                     
             if isinstance(data, list):
-                data.append(records_to_save) 
+                data.append(to_save) 
             else:
-                data = [records_to_save]
+                data = [to_save]
 
             with open(output_path, 'w') as f:
                 json.dump(data, f, indent=2)
