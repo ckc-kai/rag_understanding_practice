@@ -22,7 +22,9 @@ datasets>=2.19
 
 # PDF
 pypdf>=5.0
+pymupdf
 
 # Utilities
 tqdm>=4.66
 requests>=2.32
+pystemmer

@@ -27,7 +27,7 @@ from ragas.metrics import (
 from ragas.llms import llm_factory
 from openai import OpenAI
 import fitz
-from utils import get_chapter_nodes, ragas_evaluate, extract_contexts_from_agent_response
+from utils import get_chapter_nodes, ragas_evaluate
 from collections import defaultdict
 from configs.config import setup_logger
 logger = logging.getLogger(__name__)
@@ -414,11 +414,12 @@ Plan:"""
 
 # Orchestrator
 class AgentOrchestrator:
-    def __init__(self, agent: ReActAgent, llm, embed_model, book_configs:List[BookConfig]):
+    def __init__(self, agent: ReActAgent, llm, embed_model, book_configs:List[BookConfig], tools: List[QueryEngineTool]):
         self.agent = agent
         self.llm = llm
         self.embed_model = embed_model
         self.book_configs = book_configs
+        self.tools = {tool.metadata.name: tool for tool in tools}
         
         self.decomposer = QueryDecomposer(llm)
         self.validator = AnswerValidator(llm)
@@ -488,7 +489,7 @@ class AgentOrchestrator:
 
     async def _execute_single_step(self, question: str, plan: Dict[str, Any]) -> Tuple[Dict[str, str], List[str], List[str]]:
         """
-        Execute a single query against selected books.
+        Execute a single query by performing explicit retrieval then agent synthesis.
 
         Args:
             question (str): The question to execute.
@@ -511,43 +512,68 @@ class AgentOrchestrator:
             logger.info(f"[MULTI-BOOK] Querying {len(target_books)} books: {target_books}")
             self.stats["multi_book_queries"] += 1
         
-        hint_resources = [f"{b}_Tool" for b in target_books]
-        augmented_question = f"{question} (Based on your planning, strictly use these resources: {', '.join(hint_resources)})"
+        # --- Step 1: Explicit Retrieval ---
+        current_contexts = []
+        for book_name in target_books:
+            tool_name = f"{book_name}_Tool"
+            tool = self.tools.get(tool_name)
+            
+            if not tool:
+                logger.warning(f"Tool {tool_name} not found in orchestrator tools.")
+                continue
+                
+            try:
+                logger.info(f"[RETRIEVAL] Querying {book_name} directly...")
+                # Direct query to the engine
+                response = tool.query_engine.query(question)
+                
+                # Extract nodes
+                if hasattr(response, "source_nodes"):
+                    for node in response.source_nodes:
+                        content = node.node.get_content()
+                        # Add citation metadata to help the LLM reference correctly
+                        current_contexts.append(f"Source: {book_name}\nContent: {content}")
+                        used_books.add(book_name)
+                
+            except Exception as e:
+                logger.error(f"[RETRIEVAL] Failed to query {book_name}: {e}")
+
+        contexts.extend(current_contexts)
         
+        # --- Step 2: Synthesis (FIXED) ---
         try:
-            response = await self.agent.run(augmented_question)
+            if current_contexts:
+                # OPTION A: We have context. Do NOT use the Agent. Use the LLM directly.
+                # This prevents the LLM from trying to use tools again.
+                context_str = "\n\n".join(current_contexts)
+                prompt = f"""
+You are an intelligent research assistant. 
+Answer the following question using ONLY the provided context below.
+Do not hallucinate information not present in the context.
+
+Context:
+{context_str}
+
+Question: {question}
+
+Answer:
+"""
+                logger.info(f"[EXECUTION] Synthesizing answer from {len(current_contexts)} chunks...")
+                # Use standard completion/chat instead of agent.run because ReActAgent encounters Recursive Retreival Loops.
+                response = await self.llm.acomplete(prompt) 
+                book_answers["agent_response"] = str(response)
+                
+                logger.info(f"[EXECUTION] Success. Retrieved {len(contexts)} chunks from {len(used_books)} books.")
             
-            # Extract answer
-            book_answers["agent_response"] = str(response)
-            
-            # Debugging: Log what we got
-            logger.info(f"Agent response type: {type(response)}")
-            logger.info(f"Has sources: {hasattr(response, 'sources')}")
-            if hasattr(response, "sources"):
-                for s in response.sources:
-                    logger.info(f"Tool: {s.tool_name}")
-                    logger.info(f"Raw output type: {type(s.raw_output)}")
-                    logger.info(
-                        f"Source nodes count: {len(getattr(s.raw_output, 'source_nodes', []))}"
-                    )
-
-
-            # Extract tools used
-            if hasattr(response, "sources"):
-                for tool_output in response.sources:
-                    if hasattr(tool_output, "tool_name"):
-                         t_name = tool_output.tool_name
-                         # Assuming tool naming convention "{book_name}_Tool"
-                         if t_name.endswith("_Tool"):
-                             b_name = t_name.replace("_Tool", "")
-                             used_books.add(b_name)
-                         else:
-                             used_books.add(t_name)
-
-                contexts.extend(extract_contexts_from_agent_response(response))
+            else:
+                # OPTION B: No context found manually. 
+                # NOW we can fall back to the Agent to see if it can figure it out.
+                logger.warning("[EXECUTION] No contexts retrieved. Asking agent to search.")
+                response = await self.agent.run(question)
+                book_answers["agent_response"] = str(response)
 
         except Exception as e:
-            logger.error(f"[EXECUTION] Query failed: {e}")
+            logger.error(f"[EXECUTION] Synthesis failed: {e}", exc_info=True)
             book_answers["error"] = str(e)
             
         return book_answers, contexts, list(used_books)
@@ -571,6 +597,9 @@ class AgentOrchestrator:
         # 3. Execute logic (Dependent/Independent/Single)
         book_answers, all_contexts, books_used = await self._execute_sub_queries(sub_queries, plan)
         
+        logger.info(f"[EXECUTION] All contexts: {all_contexts}")
+        logger.info(f"[EXECUTION] Books used: {books_used}")
+
         # 4. Synthesize if needed (Already partly handled by accumulating answers, but we might want a final polish)
         if len(book_answers) > 1 and bool(plan.get("needs_synthesis", False)):
             logger.info("[SYNTHESIS] Combining resources...")
@@ -592,24 +621,45 @@ class AgentOrchestrator:
         # 6. Retry 
         retry_count = 0
         while (not bool(validation.get("is_adequate", True)) and retry_count < max_retries):
+            if not all_contexts:
+                logger.warning("Retry without context — skipping further retries.")
+                break
+
             retry_count += 1
             logger.info(f"[RETRY] Retrying query ({retry_count}/{max_retries})...")
             self.stats["retries"] += 1
             
             issues = validation.get("issues", [])
             try:
-                retry_prompt = (
-                    f"{question}\n\nPrevious answer had these issues: {', '.join(issues)}. "
-                    "Please provide a more complete answer."
-                )
+                retry_prompt = f"""
+You previously answered the question below, but the answer was judged inadequate.
+
+Question:
+{question}
+
+Previous Answer:
+{final_answer}
+
+Issues Identified:
+{chr(10).join(f"- {i}" for i in issues)}
+
+Retrieved Context (grounding material):
+{chr(10).join(all_contexts[:5])}
+
+Task:
+- Revise the previous answer to fix the issues.
+- Preserve correct parts.
+- Correct or remove incorrect or unsupported claims.
+- Ground the answer strictly in the provided context.
+- If context is insufficient, explicitly say so.
+
+Return ONLY the revised answer.
+"""
                 response = await self.agent.run(retry_prompt)
                 
                 final_answer = str(response)
                 logger.info(f"[RETRY] Validated New Answer: {final_answer}")
-                # Append new contexts
-                if hasattr(response, "source_nodes"):
-                    all_contexts.extend([node.node.get_content() for node in response.source_nodes])
-                
+
                 validation = self.validator.validate(question=question, answer=final_answer, context=all_contexts)
             except Exception as e:
                 logger.error(f"[RETRY] Retry failed: {e}")
@@ -709,7 +759,7 @@ class Librarian:
                 
                 bm25_retriever = BM25Retriever.from_defaults(
                     nodes=nodes,
-                    similarity_top_k=self.config.retrieval_config.similarity_top_k * 2, # Fetch more for fusion
+                    similarity_top_k=self.config.retrieval_config.similarity_top_k * 2,
                     stemmer=Stemmer.Stemmer("english"),
                     language="english"
                 )
@@ -775,13 +825,12 @@ class Librarian:
             verbose=True,
             max_iterations=5,
             system_prompt=(
-                f"You are an intelligent research assistant with access to {len(self.tools)} books. "
-                "Choose the most relevant book tool(s) based on the question. "
-                "You can reason through complex questions, query multiple books if needed, "
-                "and synthesize information from different sources. "
-                "Think step-by-step and explain your reasoning."
-                "You MUST use at least one tool to answer. "
-                "If nothing is found or no tools are used, answer with 'I don't know from current library.'"
+                f"You are an intelligent research assistant. "
+                "Your primary role is to synthesize answers from the provided context. "
+                "You may be given a set of retrieved documents and a question. "
+                "Answer the question using ONLY the provided documents. "
+                "If no documents are provided or they are insufficient, say 'I cannot answer from the available resources'."
+                "Do NOT attempt to use tools if context is already provided."
             ),
             memory=short_term_memory,
         )
@@ -791,7 +840,8 @@ class Librarian:
             llm = self.llm,
             agent = self.agent,
             embed_model = self.embed_model,
-            book_configs = self.config.books
+            book_configs = self.config.books,
+            tools = self.tools
         )
     async def query(self, question: str):
         return await self.orchestrator.query(question)
