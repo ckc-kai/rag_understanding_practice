@@ -1,10 +1,28 @@
-# Advanced Agentic RAG System
+# RAG Systems Exploration
 
-This project is an advanced **Retrieval-Augmented Generation (RAG)** system built using **LlamaIndex** and **Ollama**. It implements an agentic workflow that plans, retrieves, and synthesizes information from multiple PDF books to answer complex user queries.
+This project is an advanced **Retrieval-Augmented Generation (RAG)** system built using **LlamaIndex** and **Ollama**. It implements both linear and agentic workflows that plans, retrieves, and synthesizes information from multiple PDF books to answer complex user queries.
 
-## 🚀 Key Features
+## Linear RAG 1 Key Features
 
-- **Agentic Workflow**: distinct layers for Planning, Decomposition, Retrieval, and Synthesis.
+- Simple linear RAG pipeline:
+
+- 1.  Load documents
+- 2.  Split documents into chunks
+- 3.  Create index
+- 4.  Rerank
+- 5.  A prompt template to force the LLM to use the context
+- 6.  Setup query engine
+
+## Linear RAG 2 Key Features
+
+- Based on Linear RAG 1, but with more advanced features:
+- 1. chunk based on chapter content
+- 2. Hybrid Search (BM25 + Vector)
+- 3. HyDE Query Transform
+
+## Agentic Rag Key Features
+
+- **Linear Workflow**: distinct layers for `Planning`, `Decomposition`, `Retrieval`, `Synthesis`, and `Validation`.
 - **Multi-Book Support**: Intelligently selects relevant books based on query intent using a `QueryPlanner`.
 - **Hybrid Search**: Combines **Vector Search** (Dense) and **BM25** (Sparse) using `QueryFusionRetriever` for robust retrieval.
 - **Reranking**: integrated `SentenceTransformerRerank` to improve context quality.
@@ -12,7 +30,7 @@ This project is an advanced **Retrieval-Augmented Generation (RAG)** system buil
 - **Evaluation**: Integrated **RAGAS** pipeline for evaluating Faithfulness, Answer Relevancy, Context Precision, and Answer Correctness.
 - **Memory**: `AgenticMemory` tracks successful queries and book usage patterns.
 
-## 🏗️ Architecture
+## Architecture
 
 The system is orchestrated by `AgentOrchestrator` in `advanced_rag_agentic.py`:
 
@@ -24,7 +42,7 @@ The system is orchestrated by `AgentOrchestrator` in `advanced_rag_agentic.py`:
 4.  **Validation**: `AnswerValidator` checks if the answer adequately addresses the question.
 5.  **Refinement**: If validation fails, it retries with feedback.
 
-## 🛠️ Components
+## Components
 
 - **`advanced_rag_agentic.py`**: The main application entry point. Contains the agentic logic (`Librarian`, `AgentOrchestrator`, etc.).
 - **`utils.py`**: Utilities for:
@@ -34,7 +52,7 @@ The system is orchestrated by `AgentOrchestrator` in `advanced_rag_agentic.py`:
   - `books_config.yaml`: Register your PDF books (paths, descriptions, keywords).
   - `models_config.yaml`: Configure LLM (Ollama) and Embedding models.
 
-## ⚙️ Installation
+## Installation
 
 1.  **Prerequisites**:
 
@@ -53,7 +71,7 @@ The system is orchestrated by `AgentOrchestrator` in `advanced_rag_agentic.py`:
       ollama pull qwen2.5:7b-instruct
       ```
 
-## 📖 Configuration
+## Configuration
 
 1.  **Add Books**:
     Edit `configs/books_config.yaml` to include your PDF files.
@@ -70,9 +88,9 @@ The system is orchestrated by `AgentOrchestrator` in `advanced_rag_agentic.py`:
 2.  **Model Config**:
     Adjust model parameters in `configs/models_config.yaml` if needed (e.g., context window, temperature).
 
-## 🏃 Usage
+## Usage
 
-Run the agentic RAG system:
+Run the agentic RAG system either with json file of questions or with a single question:
 
 ```bash
 python advanced_rag_agentic.py
@@ -87,7 +105,15 @@ This will:
 5.  Run RAGAS evaluation.
 6.  Save results to `./files/BuildTrap/generated_answer/agentic_rag.json`.
 
-## 🧠 Memory & caching
+## Memory & caching
 
 - Indexes are cached in `./cache/indexes` to speed up subsequent runs.
 - Agent memory is stored in `./cache/memory/agent_memory.json`.
+
+## Future Work
+
+- Add more books to build my own library
+- Could use larger/different models for embedding and LLM
+- Prompt Engineering
+- Involve Vector Database
+- Parallelize the Independent questions part
