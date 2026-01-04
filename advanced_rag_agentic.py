@@ -157,7 +157,7 @@ Evaluation criteria:
 
 Return a JSON object with:
 {{
-  "is_adequate": True/False,
+  "is_adequate": true/false,
   "confidence": 0.0-1.0,
   "issues": ["issue1", "issue2"],
   "suggestions": ["suggestion1", "suggestion2"]
@@ -173,6 +173,8 @@ Evaluation:"""
                 start = response_text.index('{')
                 end = response_text.rindex('}') + 1
                 json_str = response_text[start:end]
+                # Fix common boolean issues just in case
+                json_str = json_str.replace("True", "true").replace("False", "false")
                 evaluation = json.loads(json_str)
                 
                 logger.info(f"Evaluation: {evaluation}")
@@ -181,6 +183,7 @@ Evaluation:"""
                 return {"is_adequate": False, "confidence": 0.0, "issues": ["Invalid JSON format"], "suggestions": ["Check the answer format"]}  # Fallback
         except Exception as e:
             logger.warning(f"Failed to validate answer: {e}")
+            logger.warning(f"Raw LLM response causing failure: {response_text}")
             return {"is_adequate": False, "confidence": 0.0, "issues": ["Evaluation failed"], "suggestions": ["Check the answer format"]}
 
 class CrossBookSynthesizer:
@@ -377,10 +380,10 @@ Tasks:
 Return ONLY a JSON object:
 {{
   "complexity": "simple|moderate|complex",
-  "needs_decomposition": True/False,
+  "needs_decomposition": true/false,
   "decomposition_mode": "dependent|independent|none",
   "books_to_query": ["book(s)"],
-  "needs_synthesis": True/False,
+  "needs_synthesis": true/false,
   "reasoning": "Detailed reasoning for book selection and decomposition"
 }}
 
@@ -392,23 +395,26 @@ Plan:"""
                 start = response_text.index('{')
                 end = response_text.rindex('}') + 1
                 json_str = response_text[start:end]
+                json_str = json_str.replace("True", "true").replace("False", "false")
                 plan = json.loads(json_str)
                 logger.info(f"Created plan: {plan.get('complexity')} query")
                 return plan
             else:
+                logger.warning(f"No JSON found in response: {response_text}")
                 return {
                     "complexity": "simple",
                     "needs_decomposition": False,
-                    "books_to_query": [self.available_books[0]],
+                    "books_to_query": [self.available_books[0].name] if self.available_books else [],
                     "needs_synthesis": False,
                     "reasoning": "Fallback plan"
                 }
         except Exception as e:
             logger.warning(f"Planning failed: {e}")
+            logger.warning(f"Raw LLM response causing failure: {response_text}")
             return {
                 "complexity": "simple",
                 "needs_decomposition": False,
-                "books_to_query": [self.available_books[0]],
+                "books_to_query": [self.available_books[0].name] if self.available_books else [],
                 "needs_synthesis": False
             }
 
@@ -540,11 +546,9 @@ class AgentOrchestrator:
 
         contexts.extend(current_contexts)
         
-        # --- Step 2: Synthesis (FIXED) ---
+        # --- Step 2: Synthesis ---
         try:
             if current_contexts:
-                # OPTION A: We have context. Do NOT use the Agent. Use the LLM directly.
-                # This prevents the LLM from trying to use tools again.
                 context_str = "\n\n".join(current_contexts)
                 prompt = f"""
 You are an intelligent research assistant. 
@@ -566,8 +570,6 @@ Answer:
                 logger.info(f"[EXECUTION] Success. Retrieved {len(contexts)} chunks from {len(used_books)} books.")
             
             else:
-                # OPTION B: No context found manually. 
-                # NOW we can fall back to the Agent to see if it can figure it out.
                 logger.warning("[EXECUTION] No contexts retrieved. Asking agent to search.")
                 response = await self.agent.run(question)
                 book_answers["agent_response"] = str(response)
@@ -700,7 +702,7 @@ class Librarian:
         # Prepare embedding config
         embed_config = self.config.embed_config.copy()
         device = embed_config.pop("device", "cpu")
-        model_name = embed_config.pop("model_name", "BAAI/bge-small-en-v1.5")
+        model_name = embed_config.pop("model_name", "BAAI/bge-large-en-v1.5")
         
         self.embed_model = HuggingFaceEmbedding(
             model_name=model_name,
@@ -785,7 +787,7 @@ class Librarian:
                     reranker = SentenceTransformerRerank(
                         model=self.config.retrieval_config.rerank_model,
                         top_n=self.config.retrieval_config.rerank_top_n,
-                        device="cpu"
+                        device="mps"
                     )
                     node_postprocessors = [reranker]
                 else:

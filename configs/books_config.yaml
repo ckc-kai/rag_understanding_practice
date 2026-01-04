@@ -28,7 +28,7 @@ books:
     chunk_overlap: 50
 
     # Retrieval parameters
-    similarity_top_k: 5
+    similarity_top_k: 7
     rerank_top_n: 3
     similarity_cutoff: 0.7
     enabled: true
@@ -53,7 +53,7 @@ books:
       - agent memory
     chunk_size: 512
     chunk_overlap: 50
-    similarity_top_k: 5
+    similarity_top_k: 7
     rerank_top_n: 3
     similarity_cutoff: 0.7
     enabled: true

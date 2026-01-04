@@ -33,7 +33,7 @@ def get_clean_toc(pdf_path):
     return cleaned_data
 
 # Usage
-toc_data = get_clean_toc("./files/AgenticDesign/Agentic_Design_Pattern.pdf")
+toc_data = get_clean_toc("./files/BuildTrap/BuildTrap.pdf")
 print(toc_data[0])
 lowest = min(toc_data, key=lambda x: x['level'])['level']
 highest = max(toc_data, key=lambda x: x['level'])['level']
