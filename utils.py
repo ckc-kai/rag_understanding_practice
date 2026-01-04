@@ -95,22 +95,24 @@ def ragas_evaluate(records):
         - answer_correctness
     '''
     logger.info("Starting Ragas evaluation...")
-
+    # Setup embedding model
     ragas_embedding = HuggingFaceEmbeddings(
-        model_name="BAAI/bge-small-en-v1.5",
+        model_name="BAAI/bge-large-en-v1.5",
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True}
     )
 
-    client = OpenAI(
+    from ragas.llms import LangchainLLMWrapper
+    from langchain_openai import ChatOpenAI
+
+    # Use LangChain wrapper to avoid Instructor "multiple tool calls" error
+    lc_llm = ChatOpenAI(
+        model="qwen2.5:14b-instruct",
         base_url="http://localhost:11434/v1",
-        api_key="ollama"
+        api_key="ollama",
+        temperature=0
     )
-    rag_llm = llm_factory(
-        model="qwen2.5:7b-instruct", 
-        client=client,
-        provider="openai"
-        )
+    rag_llm = LangchainLLMWrapper(lc_llm)
 
     dataset = Dataset.from_list(records)
         
@@ -119,7 +121,7 @@ def ragas_evaluate(records):
         metrics=[faithfulness, answer_relevancy, context_precision, answer_correctness],
         llm=rag_llm,
         embeddings=ragas_embedding,
-        run_config=RunConfig(timeout=600, max_workers=1)
+        run_config=RunConfig(timeout=600, max_workers=1)        
     )
     return results
 
@@ -159,10 +161,10 @@ def answer_questions(question_path, output_path, query_engine):
             
         logger.info(f"Answered: {question}")
         eval_records.append({
-            "user_input": question,
-            "response": str(response),
-            "retrieved_contexts": [n.text for n in response.source_nodes],
-            "reference": answer,
+            "question": question,
+            "answer": str(response),
+            "contexts": [n.text for n in response.source_nodes],
+            "ground_truth": answer,
         })
         
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
